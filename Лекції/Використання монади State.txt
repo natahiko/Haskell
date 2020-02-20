@@ -1,0 +1,141 @@
+{-# OPTIONS_GHC -Wall #-}
+module Pr09State where
+
+import System.Random
+import Control.Monad.State
+
+-- ������������ ��������� ������ State
+-- ����� ��������� �������� �������� � �������� ����
+oneBool :: IO()
+oneBool = do g <- getStdGen 
+             (b,_) <- return (random g)
+             print (b::Bool)
+
+oneBool' :: IO()
+oneBool' = do g <- getStdGen 
+              let (b,_) = random g
+              print (b::Bool)
+
+-- ����� �������� ������������ State               
+greeter :: State String String
+greeter = do name <- get 
+             put "tintin"
+             return ("hello, " ++ name ++ "!")
+-- runState greeter "Edit"	   
+ 
+test :: State Int Int
+test = do
+          put 3
+          modify (+1)
+          get
+
+-- runState test 0
+-- execState test 0
+
+-- ������� ������������ ������ State
+--  ��������� ���������� �������� ������� 2-� ����������� �����
+--  "�������� ����", �� ����������� � �������� ������ State === (Int,Int)
+gcdS:: State (Int,Int) Int
+gcdS = do (x,y) <- get
+          if x == y 
+          then return x 
+          else if x < y 
+          then do put (x,y-x)
+                  gcdS 
+          else do put (x-y,y)
+                  gcdS
+
+grComDiv :: Int -> Int -> Int 
+grComDiv x y = fst(runState gcdS (x,y))
+-- grComDiv x y = evalState gcdS (x,y)			  
+ 
+{-
+ ������������ ������ State
+    �������� ��� ������� �������� �������� ���� MyType.
+    ����� �������� ������������ ��� ������ State � 
+    ����� - ������������ �������������� ������ State.
+    �������� ���� MyType - ��������, ��� � ������� ���������� �����������:
+    * �������� Int � �������� 1 - 100
+    * �������� Char �	�������� 'a' - 'z'
+    * ��������� �������� ������� �������� Int - 
+        ������ ��� ������� �������� �������� ������� Int		  
+-}
+
+-- �� ��� ��� ����� �� ������ ���������� �������� �������� 
+data MyType = MT Int Bool Char Int deriving Show
+
+{- ��� ������������ ������ State, ������� "���������"
+   ��������� ���������� ����� ����� �� ���������� ������.
+-}
+fmRandom :: StdGen -> (MyType, StdGen)
+fmRandom g = let (n,g1) = randomR (1,100) g
+                 (b,g2) = random g1
+                 (c,g3) = randomR ('a','z') g2 
+                 (m,g4) = randomR (-n,n) g3
+             in (MT n b c m, g4)
+
+
+
+{- �������������� ������ State, ������ ��������� �������,
+   ����� ������� ��������� �������� � ����� ���� - 
+   ��������� ���������� �����, ���������.
+-}
+getAny :: (Random a) => State StdGen a
+getAny = do g      <- get
+            let (x,g') = random g    -- (x,g') <- return $ random g
+            put g'
+            return x
+-- getAny = state random
+
+-- ������ �� getAny, ��� ����������� ��������� �������� � ��������
+getOne :: (Random a) => (a,a) -> State StdGen a
+getOne bounds = do g      <- get
+                   let (x,g') = randomR bounds g  --(x,g') <- return $ randomR bounds g
+                   put g'
+                   return x
+-- getOne bounds = state (randomR bounds) 
+
+{- �������������� ������ State, ���� ��� StdGen, �� ������ 
+   ��������� �������� ���� ��������� ����, �� "���������" ������ ���� -
+   ��������� ���������� ����� ����� ���������� ���.
+   ������ State ��������� ����������� ����� MonadState  
+   ������������� ������� ����� MonadState: get put 
+-} 
+fmRandomS :: State StdGen MyType
+fmRandomS = do n <- getOne (1,100)
+               b <- getAny
+               c <- getOne ('a','z')
+               m <- getOne (-n,n)
+               return (MT n b c m)
+
+
+{- �������������� ������ State, ���� ��� StdGen, �� ������ 
+   ��������� �������� ���� ��������� ����, �� "���������" ������ ���� -
+   ��������� ���������� ����� ����� ���������� ���.
+   ������ State ��������� ����������� ����� MonadState  
+   ������������� ������� state, ����� ���� 
+   � ������ random � randomR �������� ������ State   
+   ��������� ������� state (� Control.Monad.State) 
+   ����� �� ��������� ������ ������� getAny � getOne
+   state :: (s -> (a, s)) -> State a
+   state f = do s <- get 
+                let (a,s') = f s 
+                put s' 
+                return a 				
+-}   
+fmRandomM :: State StdGen MyType
+fmRandomM = do n <- state $ randomR (1,100)
+               b <- state random
+               c <- state $ randomR ('a','z')
+               m <- state $ randomR (-n,n)
+               return (MT n b c m)
+
+-- ���� ����������� �������� ���� MyType, 
+-- ���������, �� ��� ��������� ����������� 
+main :: IO ()
+main = do g <- getStdGen
+          print $ fst $ fmRandom g
+          print $ fst $ runState fmRandomS g
+          print $ fst $ runState fmRandomM g
+
+-- ʲ����

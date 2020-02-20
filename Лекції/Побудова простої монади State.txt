@@ -1,0 +1,130 @@
+{-# OPTIONS_GHC -Wall #-}
+module Pr09StateM where
+
+import System.Random
+
+-- побудова простої монади State 
+newtype State s a = State {runState :: (s -> (a,s))} 
+
+-- Клас Functor і Applicative 
+-- функтор
+-- fmap :: (a -> b) -> State s a -> State s b    fmap == <$>   
+instance Functor (State s)  where
+  fmap f (State g) = State (\s -> let (v,s1) = g s in (f v, s1))
+
+-- Клас Applicative 
+-- аплікативний функтор         
+-- pure :: a -> State s a 
+-- (<*>) :: State s (a -> b) -> State s a -> State s b    
+instance Applicative (State s) where
+  pure a = State (\s -> (a,s))
+  (State g) <*> sa = State (\s -> let (f,s1) = g s in runState (f <$> sa) s1)
+
+-- Клас  Monad 
+-- return :: a -> State s a 
+-- (>>=) :: State s a -> (a -> State s b) -> (State s b)    
+instance Monad (State s) where
+  return = pure   -- return a = State (\s -> (a,s))
+  (State g) >>= f = State(\s -> let (v,s1) = g s in runState (f v) s1)
+
+-- runState  :: State s a -> s -> (a,s)
+evalState :: State s a -> s -> a
+evalState st s = fst (runState st  s)
+
+execState :: State s a -> s -> s
+execState st s = snd (runState st s) 
+
+get :: State  s s
+get  = State (\s -> (s,s))
+
+put :: s -> State  s ()
+put s = State (\_ -> ((),s))
+
+state :: (s -> (a,s)) -> State s a
+state f = State (\s -> f s)
+
+modify :: (s -> s) -> State s ()
+modify f = get >>= \x -> put (f x)
+
+-- прості приклади використання State               
+greeter :: State String String
+greeter = do name <- get 
+             put "tintin"
+             return ("hello, " ++ name ++ "!")
+-- runState greeter "Edit"	   
+ 
+test :: State Int Int
+test = do
+          put 3
+          modify (+1)
+          get
+
+-- приклад використання монади State
+--  обрахунок найбільшого спільного дільника 2-х натуральних чисел
+--  "схований стан", що знаходиться в середині монади State === (Int,Int)
+gcdS:: State (Int,Int) Int
+gcdS = do (x,y) <- get
+          if x == y 
+          then return x 
+          else if x < y 
+          then do put (x,y-x)
+                  gcdS 
+          else do put (x-y,y)
+                  gcdS
+
+grComDiv :: Int -> Int -> Int 
+grComDiv x y = fst(runState gcdS (x,y))
+-- grComDiv x y = evalState gcdS (x,y)			
+
+-- формує випадкове булівське значення і виводить його
+oneBool :: IO()
+oneBool = do g <- getStdGen 
+             (b,_) <- return (random g)
+             print (b::Bool)
+
+oneBool' :: IO()
+oneBool' = do g <- getStdGen 
+              let (b,_) = random g
+              print (b::Bool)
+
+{-
+ Використання монади State
+    Виводить два однакові випадкові значення типу MyType.
+    Перше значення обчислюється без монади State і 
+    друге - обчислюється використовуючи монаду State.
+    Значення типу MyType - випадкові, але з деякими внутрішніми обмеженнями:
+    * значення Int з діапазону 1 - 100
+    * значення Char з	діапазону 'a' - 'z'
+    * абсолютна величина другого значення Int - 
+        меньше або дорівнює величині значення першого Int		  
+-}
+
+-- Це тип для якого ми хочемо генерувати випадкові значення 
+data MyType = MT Int Bool Char Int deriving Show
+
+{- Без використання монади State, повинні "проносити"
+   генератор випадкових чисел через всі обчислення руками.
+-}
+fmRandom :: StdGen -> (MyType, StdGen)
+fmRandom g = let (n,g1) = randomR (1,100) g
+                 (b,g2) = random g1
+                 (c,g3) = randomR ('a','z') g2 
+                 (m,g4) = randomR (-n,n) g3
+             in (MT n b c m, g4)
+
+fmRandomM :: State StdGen MyType
+fmRandomM = do n <- state $ randomR (1,100)
+               b <- state random
+               c <- state $ randomR ('a','z')
+               m <- state $ randomR (-n,n)
+               return (MT n b c m)
+
+
+-- вивід випадкового значення типу MyType, 
+-- показуючи, що дві реалізації еквівалентні 
+main :: IO ()
+main = do g <- getStdGen
+          print $ fst $ fmRandom g
+          print $ fst $ runState fmRandomM g
+
+
